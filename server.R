@@ -8,6 +8,7 @@
 # install.packages("SnowballC")
 #install_github("timjurka/sentiment")
 #install_url("http://cran.r-project.org/src/contrib/Archive/sentiment/sentiment_0.2.tar.gz")
+# devtools::install_github('christophergandrud/d3Network')
 
 # require(sentiment)
 require(graphics)
@@ -27,6 +28,7 @@ library(stringr)
 library(SnowballC)
 library(ape) # for the phylogenetic dendrogram
 library(ggdendro)
+library(networkD3)
 
 # load functions 
 source("sentiment/R/classify_emotion.R")
@@ -63,7 +65,7 @@ shinyServer(
                                             cainfo = "cacert.pem")                
             
             #Transform the list into a neat dataframe
-            do.call("rbind", lapply(QueryResult, as.data.frame))            
+            do.call("rbind", lapply(QueryResult, as.data.frame))
         })
         
         output$TwitterQuery <- renderDataTable({
@@ -146,7 +148,7 @@ shinyServer(
             })
 
         
-        output$dendrogram <- renderPlot({
+        output$dendrogram <- renderPrint({
             withProgress(message = 'Collecting tweets in progress',
                          detail = 'This may take a while...', value = 0, {
                              VectorTweet <- as.vector(r_stats()[,"text"])
@@ -162,15 +164,20 @@ shinyServer(
                             # cluster terms
                             distMatrix <- dist(scale(m2))
                             hc <- hclust(distMatrix, method = "ward.D")
-                            JSON <- HCtoJSON(hc)
-                            d3js.html <- D3Dendo(JSON)
+                            d3js.html <- treeNetwork(as.treeNetwork(hc))
+#                             JSON <- HCtoJSON(hc)
+#                             Flare <- rjson::fromJSON(JSON)
+#                             d3js.html <- d3ClusterDendro(
+#                                 Flare,
+#                                 fontsize = 12,
+#                                 zoom = TRUE, 
+#                                 widthCollapse = 0.8
+#                             )
+#                             d3js.html <- d3Tree(List = Flare, fontsize = 12, diameter = 800)
+                            
                             return(d3js.html)
-                                                        
-#                             ggdendrogram(hc, rotate = TRUE, theme_dendro = TRUE, color = "tomato")
-#                             plot(as.phylo(hc), type = "fan")
-#                             rect.hclust(fit, k = 6) # cut tree into 6 clusters
                          })
-        })        
+        })
         
         output$plot <- renderPlot({
             withProgress(message = 'Collecting tweets in progress',
