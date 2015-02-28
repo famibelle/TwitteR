@@ -15,7 +15,7 @@ require(graphics)
 
 library(twitteR)
 library(shiny)
-library(ROAuth)
+# library(ROAuth) ROAuth is no longer used in favor of httr
 library(RColorBrewer)
 library(tm)
 library(wordcloud)
@@ -26,9 +26,10 @@ library(plyr)
 library(igraph)
 library(stringr)
 library(SnowballC)
-library(ape) # for the phylogenetic dendrogram
+# library(ape) # for the phylogenetic dendrogram
 library(ggdendro)
 library(networkD3)
+library(dygraphs)
 
 # load functions 
 source("sentiment/R/classify_emotion.R")
@@ -45,24 +46,31 @@ CountryWoeid <- fromJSON(txt = "WOEID.json", flatten =TRUE)
 TownList <-    CountryWoeid[CountryWoeid$placeType.name == "Town"    ,  ]
 CountryList <- CountryWoeid[CountryWoeid$placeType.name == "Country" ,  ]
 
+# Load all the Twitter supported languages
+languages <- fromJSON(txt = "language.json", flatten =TRUE)
+
+
 # load all the needed twitter authentication 
-load("twitter.authentication")
-registerTwitterOAuth(twitCred)
+# load("twitter.authentication")
+# registerTwitterOAuth(twitCred) ROAuth is no longer used in favor of httr
+
+setup_twitter_oauth(apikey, apisecret, token, tokensecret)
 
 # Shiny main program
 shinyServer(
     function(input, output, session) {
         r_stats <- reactive({
 #             validate(
-#                 need(input$TwitterQuery != "", "En attente du mot clé")
+#                 need(input$TwitterQuery != "", "Terms can contain spaces, and multiple terms should be separated with +")
+# #                 need(input$n_Tweets     != "", "Come on, I need more than 1 tweet!")
 #             )
-            
             QueryResult <- searchTwitteR(input$TwitterQuery, 
                                             n = input$n_Tweets, 
                                             since = as.character(input$daterange[1]),
                                             until = as.character(input$daterange[2]),
-                                            lang = input$lang,
-                                            cainfo = "cacert.pem")                
+                                            lang = languages[languages$name == input$lang,1]
+                                         )
+#                                             cainfo = "cacert.pem")
             
             #Transform the list into a neat dataframe
             do.call("rbind", lapply(QueryResult, as.data.frame))
@@ -139,16 +147,48 @@ shinyServer(
                      lengthChange = FALSE    # show/hide records per page dropdown
             )
         )
-        
-        output$WhoRT <- renderPlot({
+ 
+    output$TweetsTimeLine <- renderDygraph({
+        withProgress(message = 'Collecting tweets in progress',
+                     detail = 'This may take a while...', value = 0, {
+                         QueryResult <- r_stats()
+                     })
+        QueryResult$Tweets <- 1
+        QueryResult <- QueryResult[,c("created", "Tweets")]
+        QueryResult.TimeSeries <- xts(QueryResult[-1], order.by = QueryResult$created)
+        titre = paste(format(min(index(QueryResult.TimeSeries)), format="%d %B %Y"),
+                      "->",
+                      format(max(index(QueryResult.TimeSeries)), format="%d %B %Y"))
+        yAxis <- paste("Number of Tweets (", length(QueryResult.TimeSeries), "tweets collected )" )
+        cumulatedTweets <- period.apply(QueryResult.TimeSeries, endpoints(QueryResult.TimeSeries, "hours"), sum)
+        dygraph(cumulatedTweets, main = titre) %>% 
+            dyRangeSelector() %>% 
+            dyOptions(stepPlot = TRUE, axisLineWidth = 1.5, fillGraph = TRUE, drawGrid = FALSE, useDataTimezone = TRUE, animatedZooms = TRUE) %>%
+            dyAxis("y", label = yAxis)
+    })
+
+        output$WhoRT <- renderSimpleNetwork({
             withProgress(message = 'Collecting tweets in progress',
                          detail = 'This may take a while...', value = 0, {
-                             Who_RT_the_Tweet(Tweet = input$TwitterQuery, no_of_tweets = input$n_Tweets, lang = input$lang)
+                             simpleNetwork(
+                                 Who_RT_the_Tweet(
+                                     Tweet = input$TwitterQuery, 
+                                     no_of_tweets = input$n_Tweets, 
+                                     lang = languages[languages$name == input$lang,1])
+                             ,fontSize = 14)
                          })
             })
 
-        
-        output$dendrogram <- renderPrint({
+        output$tweetnetwork <- renderSimpleNetwork({
+            QueryResult <- r_stats()
+            TweetNetwork <- data.frame(QueryResult$screenName, QueryResult$replyToSN)
+            removeNA <- is.na(TweetNetwork$QueryResult.replyToSN)
+            TweetNetwork <- TweetNetwork[!removeNA,]
+            simpleNetwork(TweetNetwork, fontSize = 14)            
+        })
+
+
+        output$dendrogram <- renderTreeNetwork({
             withProgress(message = 'Collecting tweets in progress',
                          detail = 'This may take a while...', value = 0, {
                              VectorTweet <- as.vector(r_stats()[,"text"])
@@ -156,7 +196,7 @@ shinyServer(
             
             withProgress(message = 'Processing Corpus and Dendrogram',
                          detail = 'This may take a while...', value = 0, {
-                            TweetCorpus <- purify(VectorTweet, lang = input$lang)
+                            TweetCorpus <- purify(VectorTweet, lang = languages[languages$name == input$lang,1])
                             tdm <- TermDocumentMatrix(TweetCorpus, control = list(wordLengths = c(1, Inf)))
                             # remove sparse terms
                             tdm2 <- removeSparseTerms(tdm, sparse = 0.95)
@@ -164,7 +204,7 @@ shinyServer(
                             # cluster terms
                             distMatrix <- dist(scale(m2))
                             hc <- hclust(distMatrix, method = "ward.D")
-                            d3js.html <- treeNetwork(as.treeNetwork(hc))
+                            d3js.html <- treeNetwork(as.treeNetwork(hc), fontSize = 12)
 #                             JSON <- HCtoJSON(hc)
 #                             Flare <- rjson::fromJSON(JSON)
 #                             d3js.html <- d3ClusterDendro(
@@ -188,7 +228,7 @@ shinyServer(
             withProgress(message = 'Processing word cloud',
                          detail = 'This may take a while...', value = 0, {
                 Tweet_palette <-brewer.pal(9,"Set1")
-                TweetCorpus <- purify(VectorTweet, lang = input$lang)
+                TweetCorpus <- purify(VectorTweet, lang = languages[languages$name == input$lang,1])
                 wordcloud(TweetCorpus,
                           min.freq=5,max.words=500, 
                           random.order=FALSE,

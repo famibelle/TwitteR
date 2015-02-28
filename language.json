@@ -143,5 +143,10 @@
     "code": "en-gb",
     "status": "production",
     "name": "English UK"
+},
+{
+    "code": "",
+    "status": "production",
+    "name": "Any"
 }
 ]
