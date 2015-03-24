@@ -20,8 +20,8 @@
 Who_RT_the_Tweet <- function(Tweet= "#JeSuisCharlie",no_of_tweets=101, lang="en") {
     dm_tweets = searchTwitter(Tweet,
                               n = no_of_tweets, 
-                              lang = lang,
-                              cainfo = "cacert.pem")
+                              lang = lang)
+#                               cainfo = "cacert.pem")
     
     # get text
     dm_txt = sapply(dm_tweets, function(x) x$getText())
@@ -70,32 +70,32 @@ Who_RT_the_Tweet <- function(Tweet= "#JeSuisCharlie",no_of_tweets=101, lang="en"
     # Step 5: Create graph from an edglist
     # two column matrix of edges
     retweeter_poster = cbind(who_retweet, who_post)
-    
-    # generate graph
-    rt_graph = graph.edgelist(retweeter_poster)
-    
-    # get vertex names
-    ver_labs = get.vertex.attribute(rt_graph, "name", index=V(rt_graph))
-    
-    # choose some layout
-    glay = layout.fruchterman.reingold(rt_graph)
-
-    # Step 7: Let's try to give it a more bioinformatician look
-    # another plot
-    par(bg="gray15", mar=c(1,1,1,1))
-    plot(rt_graph, layout=glay,
-       vertex.color=hsv(h=.35, s=1, v=.7, alpha=0.1),
-       vertex.frame.color=hsv(h=.35, s=1, v=.7, alpha=0.1),
-       vertex.size=5,
-       vertex.label=ver_labs,
-       vertex.label.family="mono",
-       vertex.label.color=hsv(h=0, s=0, v=.95, alpha=0.5),
-       vertex.label.cex=0.85,
-       edge.arrow.size=0.8,
-       edge.arrow.width=0.5,
-       edge.width=3,
-       edge.color=hsv(h=.35, s=1, v=.7, alpha=0.4))
-    # add title
-    title(paste("\n", no_of_tweets, "Tweets with ", Tweet, " Who retweets whom"),
-       cex.main=1, col.main="gray95", family="mono")
+    return(as.data.frame(retweeter_poster))
+#     # generate graph
+#     rt_graph = graph.edgelist(retweeter_poster)
+#     
+#     # get vertex names
+#     ver_labs = get.vertex.attribute(rt_graph, "name", index=V(rt_graph))
+#     
+#     # choose some layout
+#     glay = layout.fruchterman.reingold(rt_graph)
+# 
+#     # Step 7: Let's try to give it a more bioinformatician look
+#     # another plot
+#     par(bg="gray15", mar=c(1,1,1,1))
+#     plot(rt_graph, layout=glay,
+#        vertex.color=hsv(h=.35, s=1, v=.7, alpha=0.1),
+#        vertex.frame.color=hsv(h=.35, s=1, v=.7, alpha=0.1),
+#        vertex.size=5,
+#        vertex.label=ver_labs,
+#        vertex.label.family="mono",
+#        vertex.label.color=hsv(h=0, s=0, v=.95, alpha=0.5),
+#        vertex.label.cex=0.85,
+#        edge.arrow.size=0.8,
+#        edge.arrow.width=0.5,
+#        edge.width=3,
+#        edge.color=hsv(h=.35, s=1, v=.7, alpha=0.4))
+#     # add title
+#     title(paste("\n", no_of_tweets, "Tweets with ", Tweet, " Who retweets whom"),
+#        cex.main=1, col.main="gray95", family="mono")
 }

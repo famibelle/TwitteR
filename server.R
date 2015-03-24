@@ -25,11 +25,14 @@ library(gridExtra)
 library(plyr)
 library(igraph)
 library(stringr)
+library(stringi)
 library(SnowballC)
 # library(ape) # for the phylogenetic dendrogram
 library(ggdendro)
 library(networkD3)
 library(dygraphs)
+library(forecast)
+library(XML)
 
 # load functions 
 source("sentiment/R/classify_emotion.R")
@@ -56,7 +59,9 @@ languages <- fromJSON(txt = "language.json", flatten =TRUE)
 
 setup_twitter_oauth(apikey, apisecret, token, tokensecret)
 
+#########################################################
 # Shiny main program
+#########################################################
 shinyServer(
     function(input, output, session) {
         r_stats <- reactive({
@@ -75,16 +80,45 @@ shinyServer(
             #Transform the list into a neat dataframe
             do.call("rbind", lapply(QueryResult, as.data.frame))
         })
-        
+    
+############################ Twitter Dataframe ############################
         output$TwitterQuery <- renderDataTable({
-                    r_stats()[,c("screenName", "text", "created") ]
+            Tweets <- r_stats()
+            return(Tweets)
         })
 
+############################  Miscellaneous ############################
         output$on_Tweets    <- renderPrint({input$n_Tweets})
         output$oid2         <- renderPrint({input$id2})
         output$odate        <- renderPrint({input$daterange})
         
-        
+
+
+############################ Tweets Source ############################
+output$TweetSource <- renderGvis({
+    withProgress(message = 'Calculation in progress',
+                 detail = 'This may take a while...', value = 0, {
+                     QueryResult <- r_stats()
+                 })
+    
+    # Read and parse HTML file
+    doc.html = htmlTreeParse(QueryResult$statusSource,
+                             useInternal = TRUE)
+    doc.text <- unlist(xpathApply(doc.html, '//a', xmlValue))
+    statusSource <- as.data.frame(doc.text)
+    statusSource <- count(statusSource)
+    
+    PieTweetSources  <- gvisPieChart(
+        statusSource,
+        chartid = "myPieChart",
+        options=list(
+            title='Tweets sources',
+            width="800px", height="600px")
+    )
+    return(PieTweetSources)
+})
+
+############################ Sentiment Analysis ############################
         output$sentiment <- renderGvis({
             withProgress(message = 'Calculation in progress',
                          detail = 'This may take a while...', value = 0, {
@@ -108,11 +142,13 @@ shinyServer(
             )
             Polarity <- count(TweetSentiments$polarity)
             Emotion  <- count(TweetSentiments$emotion)
-            PiePolarity <- gvisPieChart(Polarity,
-                                        options=list(
-                                            title='Tweets Polarity'
-                                            )
-                                        )
+            PiePolarity <- gvisPieChart(
+                Polarity,
+                chartid = "myPieChartPolarity",
+                options=list(
+                    title='Tweets Polarity'
+                )
+            )
             PieEmotion  <- gvisPieChart(Emotion,
                                         options=list(
                                             title='Tweets Emotion'
@@ -137,6 +173,7 @@ shinyServer(
             return(Gauges)
         })
 
+############################ Trending topics ############################
         output$TrendingTopics <- renderDataTable({
             TT <- getTrends(TownList[TownList$name == input$town, "woeid"], cainfo = "cacert.pem")
             TrendingTopics <- as.data.frame(TT$name)
@@ -148,6 +185,7 @@ shinyServer(
             )
         )
  
+############################ Timeline ############################
     output$TweetsTimeLine <- renderDygraph({
         withProgress(message = 'Collecting tweets in progress',
                      detail = 'This may take a while...', value = 0, {
@@ -161,12 +199,27 @@ shinyServer(
                       format(max(index(QueryResult.TimeSeries)), format="%d %B %Y"))
         yAxis <- paste("Number of Tweets (", length(QueryResult.TimeSeries), "tweets collected )" )
         cumulatedTweets <- period.apply(QueryResult.TimeSeries, endpoints(QueryResult.TimeSeries, "hours"), sum)
-        dygraph(cumulatedTweets, main = titre) %>% 
+
+        n <- length(cumulatedTweets)
+        h <- ceiling(n/3)
+        
+        prediction <- as.data.frame(forecast(cumulatedTweets,h = h, level = 90))
+        n <- length(cumulatedTweets)
+        
+        prediction$time <- ((index(cumulatedTweets[n])-index(cumulatedTweets[n-1]))*1:h)+index(cumulatedTweets[n])
+        prediction <- as.xts(prediction[,-4], order.by = prediction$time)
+        
+        all <- cbind(cumulatedTweets, prediction)
+        
+        dygraph(all, "Tweets", main = titre) %>%   
             dyRangeSelector() %>% 
-            dyOptions(stepPlot = TRUE, axisLineWidth = 1.5, fillGraph = TRUE, drawGrid = FALSE, useDataTimezone = TRUE, animatedZooms = TRUE) %>%
+            dySeries("Tweets", label = "Tweets", fillGraph = TRUE) %>% 
+            dySeries(c("Lo.90", "Point.Forecast", "Hi.90"), label = "Predicted") %>%
+            dyOptions(stepPlot = TRUE, axisLineWidth = 1.5 , drawGrid = FALSE, useDataTimezone = TRUE, animatedZooms = TRUE) %>%
             dyAxis("y", label = yAxis)
     })
 
+############################ Who has RT ############################
         output$WhoRT <- renderSimpleNetwork({
             withProgress(message = 'Collecting tweets in progress',
                          detail = 'This may take a while...', value = 0, {
@@ -179,6 +232,7 @@ shinyServer(
                          })
             })
 
+############################ Network view of conversations ############################
         output$tweetnetwork <- renderSimpleNetwork({
             QueryResult <- r_stats()
             TweetNetwork <- data.frame(QueryResult$screenName, QueryResult$replyToSN)
@@ -188,13 +242,14 @@ shinyServer(
         })
 
 
+############################ Dendrogram ############################
         output$dendrogram <- renderTreeNetwork({
             withProgress(message = 'Collecting tweets in progress',
                          detail = 'This may take a while...', value = 0, {
                              VectorTweet <- as.vector(r_stats()[,"text"])
                          })
             
-            withProgress(message = 'Processing Corpus and Dendrogram',
+            withProgress(message = paste('Processing Corpus and Dendrogram based on',length(VectorTweet), "tweets"),
                          detail = 'This may take a while...', value = 0, {
                             TweetCorpus <- purify(VectorTweet, lang = languages[languages$name == input$lang,1])
                             tdm <- TermDocumentMatrix(TweetCorpus, control = list(wordLengths = c(1, Inf)))
@@ -204,7 +259,7 @@ shinyServer(
                             # cluster terms
                             distMatrix <- dist(scale(m2))
                             hc <- hclust(distMatrix, method = "ward.D")
-                            d3js.html <- treeNetwork(as.treeNetwork(hc), fontSize = 12)
+                            d3js.html <- treeNetwork(as.treeNetwork(hc), fontSize = 14)
 #                             JSON <- HCtoJSON(hc)
 #                             Flare <- rjson::fromJSON(JSON)
 #                             d3js.html <- d3ClusterDendro(
@@ -218,7 +273,8 @@ shinyServer(
                             return(d3js.html)
                          })
         })
-        
+
+############################ Words cloud ############################
         output$plot <- renderPlot({
             withProgress(message = 'Collecting tweets in progress',
                          detail = 'This may take a while...', value = 0, {
