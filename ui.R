@@ -34,7 +34,7 @@ shinyUI(fluidPage(
         ),
         
         dateRangeInput("daterange", "Select a Date range:",
-                       start = Sys.Date()-10,
+                       start = Sys.Date()-1,
                        end   = Sys.Date())
     ),
     

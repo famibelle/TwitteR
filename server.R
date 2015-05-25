@@ -19,7 +19,7 @@ library(shiny)
 library(RColorBrewer)
 library(tm)
 library(wordcloud)
-library(googleVis)
+suppressPackageStartupMessages(library(googleVis))
 library(ggplot2)
 library(gridExtra)
 library(plyr)
@@ -174,16 +174,16 @@ output$TweetSource <- renderGvis({
         })
 
 ############################ Trending topics ############################
-        output$TrendingTopics <- renderDataTable({
-            TT <- getTrends(TownList[TownList$name == input$town, "woeid"], cainfo = "cacert.pem")
-            TrendingTopics <- as.data.frame(TT$name)
-            names(TrendingTopics) <- paste("Trending in ", input$town, sep="")
-            return(TrendingTopics)            
-        },
-            options=list(
-                     lengthChange = FALSE    # show/hide records per page dropdown
-            )
-        )
+#         output$TrendingTopics <- DT::datatable({
+#             TT <- getTrends(TownList[TownList$name == input$town, "woeid"], cainfo = "cacert.pem")
+#             TrendingTopics <- as.data.frame(TT$name)
+#             names(TrendingTopics) <- paste("Trending in ", input$town, sep="")
+#             return(TrendingTopics)            
+#         },
+#             options=list(
+#                      lengthChange = FALSE    # show/hide records per page dropdown
+#             )
+#         )
  
 ############################ Timeline ############################
     output$TweetsTimeLine <- renderDygraph({
